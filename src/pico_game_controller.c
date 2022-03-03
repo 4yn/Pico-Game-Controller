@@ -81,8 +81,44 @@ uint32_t color_wheel(uint16_t wheel_pos) {
 }
 
 /**
- * Color cycle effect
+ * Turbocharger chasing laser effect
+ * 
+ * Move 2 lighting areas around the controller depending on knob input.
+ * 
+ * For each knob, calculate every 5 ms:
+ * - Add any knob delta to a counter
+ * - Clamp counter to some "maximum speed"
+ * - If counter is far enough from 0, knob is moving
+ * - If counter is too near 0 and has been there for a while, fade out
+ * - Move the lighting area in the correct direction at a constant speed
+ * - Decay the counter
+ * 
+ * Curent values are tuned for
+ * - Lights sampled at 200 Hz
+ * - 0.1 rotations for lights to activate
+ * - Lighting areas take 0.75s to make one full rotation
+ * - Movement takes 0.5s to decay to stop
+ * - Fade out takes another 0.2s samples to disappear
+ * 
+ * LEDs are positioned as:
+ * - 0, 1 as dummy leds on top of controller
+ * - 2-6 LEDs on right edge, top to bottom
+ * - 7-9 as dummy leds on bottom of controller
+ * - 10-14 LEDs on left edge, bottom to top
+ * - 15 as dummy led on top of controller
+ * 
+ * Lighting areas start at position 0 and will light up the 3 nearest LEDs.
+ * By strategically positioning led 0 at the top, this avoids lighting areas
+ * from suddenly appeaering.
  **/
+
+#define TURBO_LIGHTS_CLAMP 0.1f
+#define TURBO_LIGHTS_THRESHOLD 0.05f
+#define TURBO_LIGHTS_DECAY 0.0005f
+#define TURBO_LIGHTS_VEL 0.12f
+#define TURBO_LIGHTS_MAX (WS2812B_LED_SIZE + 6.0f)
+#define TURBO_LIGHTS_FADE 40
+#define TURBO_LIGHTS_FADE_VEL 0.025f
 
 int i_clamp(int d, int min, int max) {
   const int t = d < min ? min : d;
@@ -102,17 +138,6 @@ float f_one_mod(float d, float mod) {
 float f_abs(float d) {
   return d < 0 ? -d : d;
 }
-
-/**
- * Turbocharger chasing laser effect
- **/
-#define TURBO_LIGHTS_CLAMP 0.1f
-#define TURBO_LIGHTS_THRESHOLD 0.05f
-#define TURBO_LIGHTS_DECAY 0.0005f
-#define TURBO_LIGHTS_VEL 0.12f
-#define TURBO_LIGHTS_MAX (WS2812B_LED_SIZE + 6.0f)
-#define TURBO_LIGHTS_FADE 40
-#define TURBO_LIGHTS_FADE_VEL 0.025f
 
 uint32_t turbo_prev_enc_val[ENC_GPIO_SIZE];
 float turbo_cur_enc_val[ENC_GPIO_SIZE];
