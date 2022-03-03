@@ -83,11 +83,99 @@ uint32_t color_wheel(uint16_t wheel_pos) {
 /**
  * Color cycle effect
  **/
+
+int i_clamp(int d, int min, int max) {
+  const int t = d < min ? min : d;
+  return t > max ? max : t;
+}
+
+float f_clamp(float d, float min, float max) {
+  const float t = d < min ? min : d;
+  return t > max ? max : t;
+}
+
+float f_one_mod(float d, float mod) {
+  const float t = d < 0 ? d + mod : d;
+  return t > mod ? t - mod : t;
+}
+
+float f_abs(float d) {
+  return d < 0 ? -d : d;
+}
+
+/**
+ * Turbocharger chasing laser effect
+ **/
+#define TURBO_LIGHTS_CLAMP 0.1f
+#define TURBO_LIGHTS_THRESHOLD 0.05f
+#define TURBO_LIGHTS_DECAY 0.0005f
+#define TURBO_LIGHTS_VEL 0.12f
+#define TURBO_LIGHTS_MAX (WS2812B_LED_SIZE + 6.0f)
+#define TURBO_LIGHTS_FADE 40
+#define TURBO_LIGHTS_FADE_VEL 0.025f
+
+uint32_t turbo_prev_enc_val[ENC_GPIO_SIZE];
+float turbo_cur_enc_val[ENC_GPIO_SIZE];
+float turbo_lights_pos[ENC_GPIO_SIZE];
+float turbo_lights_brightness[ENC_GPIO_SIZE];
+int turbo_lights_idle[ENC_GPIO_SIZE];
+
+void turbocharger_color_cycle(uint32_t unused) {
+  for (int i = 0; i < ENC_GPIO_SIZE; i++) {
+    int enc_delta = (enc_val[i] - turbo_prev_enc_val[i]) * (ENC_REV[i] ? 1 : -1);
+    turbo_prev_enc_val[i] = enc_val[i];
+    turbo_cur_enc_val[i] = f_clamp(turbo_cur_enc_val[i] + (float)(enc_delta) / ENC_PULSE, -TURBO_LIGHTS_CLAMP, TURBO_LIGHTS_CLAMP);
+
+    if (turbo_cur_enc_val[i] < -TURBO_LIGHTS_THRESHOLD) {
+      turbo_lights_idle[i] = 0;
+      turbo_lights_pos[i] += TURBO_LIGHTS_VEL;
+      turbo_lights_brightness[i] = 1.0f;
+    } else if (turbo_cur_enc_val[i] > TURBO_LIGHTS_THRESHOLD) {
+      turbo_lights_idle[i] = 0;
+      turbo_lights_pos[i] -= TURBO_LIGHTS_VEL;
+      turbo_lights_brightness[i] = 1.0f;
+    } else {
+      turbo_lights_idle[i]++;
+      if (turbo_lights_idle[i] > TURBO_LIGHTS_FADE) {
+        turbo_lights_pos[i] = 0;
+      } else {
+        turbo_lights_brightness[i] = f_clamp(turbo_lights_brightness[i] - TURBO_LIGHTS_FADE_VEL, 0.0f, 1.0f);
+      }
+    }
+
+    turbo_lights_pos[i] = f_one_mod(turbo_lights_pos[i], TURBO_LIGHTS_MAX);
+
+    if (turbo_cur_enc_val[i] < -TURBO_LIGHTS_DECAY) {
+      turbo_cur_enc_val[i] += TURBO_LIGHTS_DECAY;
+    } else if (turbo_cur_enc_val[i] > TURBO_LIGHTS_DECAY) {
+      turbo_cur_enc_val[i] -= TURBO_LIGHTS_DECAY;
+    }
+  }
+
+  for (int i = 0; i < WS2812B_LED_SIZE; i++) {
+    float pos = 2.0f + i + (i >= WS2812B_LED_SIZE / 2 ? 3.0f : 0.0f);
+    float l_strength = (1.0f - f_clamp(f_abs(turbo_lights_pos[0] - pos), 0.0f, 2.0f) / 2) * turbo_lights_brightness[0];
+    float r_strength = (1.0f - f_clamp(f_abs(turbo_lights_pos[1] - pos), 0.0f, 2.0f) / 2) * turbo_lights_brightness[1];
+    
+    put_pixel(urgb_u32(
+      i_clamp(l_strength * 70 + r_strength * 250, 0, 255),
+      i_clamp(l_strength * 230 + r_strength * 60, 0, 255),
+      i_clamp(l_strength * 250 + r_strength * 200, 0, 255)
+    ));
+  }
+}
+
+/**
+ * Color cycle effect
+ **/
 void ws2812b_color_cycle(uint32_t counter) {
   for (int i = 0; i < WS2812B_LED_SIZE; ++i) {
     put_pixel(color_wheel((counter + i * (int)(768 / WS2812B_LED_SIZE)) % 768));
   }
 }
+
+typedef void (*ws2812b_color_fn)(uint32_t);
+ws2812b_color_fn ws2812b_color;
 
 /**
  * WS2812B Lighting
@@ -95,7 +183,7 @@ void ws2812b_color_cycle(uint32_t counter) {
  **/
 void ws2812b_update(uint32_t counter) {
   if (time_us_64() - reactive_timeout_timestamp >= REACTIVE_TIMEOUT_MAX) {
-    ws2812b_color_cycle(counter);
+    (*ws2812b_color)(counter);
   } else {
     for (int i = 0; i < WS2812B_LED_ZONES; i++) {
       for (int j = 0; j < WS2812B_LEDS_PER_ZONE; j++) {
@@ -324,6 +412,11 @@ void init() {
   // Disable RGB
   if (gpio_get(SW_GPIO[8])) {
     multicore_launch_core1(core1_entry);
+  }
+
+  ws2812b_color = ws2812b_color_cycle;
+  if (!gpio_get(SW_GPIO[1])) {
+    ws2812b_color = turbocharger_color_cycle;
   }
 }
 
