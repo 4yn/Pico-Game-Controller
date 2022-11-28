@@ -54,6 +54,11 @@ const uint8_t ENC_GPIO[] = {27, 6};     // L_ENC(0, 1); R_ENC(2, 3)
 const bool ENC_REV[] = {false, false};  // Reverse Encoders
 const uint8_t WS2812B_GPIO = 2;
 
+const uint8_t ENC_KEYCODE[][2] = {
+    {HID_KEY_W, HID_KEY_E},
+    {HID_KEY_O, HID_KEY_P}
+};
+
 #endif
 
 extern bool joy_mode_check;
